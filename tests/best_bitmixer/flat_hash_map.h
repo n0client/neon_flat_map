@@ -6,6 +6,7 @@
 #include "./internal/policy.h"
 
 template <
+    typename F,
     typename Key,
     typename Value,
     typename Hash = std::hash<Key>,
@@ -16,7 +17,7 @@ class flat_hash_map
 public:
 
     using policy = internal::flat_map_policy<Key, Value, Hash, Equal>;
-    using raw_map = internal::raw_map<policy>;
+    using raw_map = internal::raw_map<policy, F>;
     using iterator = typename raw_map::iterator;
 
     flat_hash_map() : map() {}

@@ -12,16 +12,14 @@
 namespace internal
 {
 // TODO experiment with this, more uniform, and fast
-//inline uint64_t MIX(uint64_t x) { return(((((x) >> 31) ^ (x)) * 0xff51afd7ed558ccdull)); }
-inline uint64_t MIX(uint64_t x) { return(0x9ddfea08eb382d69ull * (0xc4ceb9fe1a85ec53ull ^ (0xff51afd7ed558ccdull ^ x))); }
+//#define MIX(x) (((((x) >> 31) ^ (x)) * 0xff51afd7ed558ccdull))
+//inline uint64_t MIX(uint64_t x) { return(((((x) >> 31) ^ (x)) * 0xff51afd7ed558ccdull));  }
 
 // #define TAKEN         0b0*******
 #define EMPTY    0x80 // 0b10000000
 #define DELETED  0xFF // 0b11111111
 #define END      0xF0 // 0b11110000
 #define PAIR_EXISTS_HERE(tag) ((tag) >= 0)
-#define TAG(hash) (MIX(hash) >> 57)
-#define IDX(hash) (MIX(hash) & 0x7FFFFFFFFFFFFFFF)
 #define GROUP_SIZE 16
 
 // TODO not all compilers support this
@@ -136,10 +134,14 @@ private:
 };
 
 
-template <class Policy>
+template <class Policy, typename MIX>
 class raw_map
 {
+    MIX mix_;
     Policy policy_;
+
+#define TAG(hash) (mix_(hash) >> 57)
+#define IDX(hash) (mix_(hash) & 0x7FFFFFFFFFFFFFFF)
 
 public:
     using slot_type = typename Policy::slot_type;
