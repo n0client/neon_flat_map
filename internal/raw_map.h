@@ -367,6 +367,45 @@ public:
         return { iterator_at(search.first), true };
     }
 
+    template <typename K>
+    bool erase(K &&key)
+    {  
+        uint64_t hash = policy_.hash_key(key);
+        auto seq = probe(IDX(hash));
+        uint8_t tag = TAG(hash);
+        __builtin_prefetch(data_ + seq.index());
+        __builtin_prefetch(tags_ + seq.index());
+        while (true) // table is never full b/c of load factor
+        {            // quadratic probing guarantees visiting each element once
+            auto group = neon_tag_match::load(tags_ + seq.index());
+            uint64_t mask = group.has_tag(tag);
+            while ((mask))
+            {
+                uint8_t offset = __builtin_ctzll(mask) >> 2;
+                if (policy_.equal_to(key,
+                         Policy::get_key(data_[seq.index() + offset])))
+                {
+                    // TODO: track number of deleted tags?
+                    data_[seq.index() + offset].~slot_type();
+                    tags_[seq.index() + offset] = DELETED; // NOT EMPTY!
+                    return true;
+                }
+                mask &= (mask - 1);
+            }
+
+            if (group.has_tag(EMPTY))
+                return false;
+
+            seq.next();
+        }
+    }
+
+    template <typename K>
+    bool erase_backshift(K &&key)
+    {
+        // eh too complex
+    }
+
     inline size_t cur_size() const noexcept { return cur_size_; }
     inline size_t max_size() const noexcept { return max_size_; }
 

@@ -38,6 +38,10 @@ public:
                               std::forward<V>(v));
     }
 
+    // TODO heterogeneous hashing, minimal copies, string keys, 
+    // TODO AoS vs SoA and datatype size
+    // remove branching in simd, small optims
+
     inline std::pair<iterator, bool>
     insert(std::pair<Key, Value> &&p)
     {
@@ -59,6 +63,13 @@ public:
         //auto it = map.template find_or_prepare_insert<false>(k, hash(k));
         //return map.iterator_at(it.first);
         return map.iterator_at(map.find(k));
+    }
+
+    template <typename K>
+    bool
+    erase(const K &k)
+    {
+        return map.erase(k);
     }
 
     void clear() { map.clear(); }
