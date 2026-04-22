@@ -252,10 +252,23 @@ auto normalize_sequence(rpn_seq_width pattern)
         static_assert(0, "u64 or string");
 }
 
-template_expr_vec gen_template_expr(u64 total_operators)
+inline bool no_filter(u64 *odometer)
+{
+    return true;
+}
+
+inline bool two_diff_ops_and_mult(u64 *odometer)
+{
+    int bits = 0;
+    for (int i = 0; i < k; ++i)
+        bits |= 1 << odometer[i];
+    return (bits & (1 << MUL)) && __builtin_popcount(bits) >= 2;
+}
+
+template <typename Filter>
+template_expr_vec gen_template_expr(u64 total_operators, Filter &&filter)
 {
     rpn_seq_vec patterns = gen_rpn_seq(total_operators);
-
     std::cout << "About to explore " << std::pow(n, k) * patterns.size() << " templates\n";
 
     std::unordered_set<u64> normalized_seqs;
@@ -275,88 +288,92 @@ template_expr_vec gen_template_expr(u64 total_operators)
 
     while (true)
     {
-        for (auto pattern : patterns)
+        if (filter(odometer))
         {
-            i64 st[k+1];
-            u64 st2[n_is][k+1], seq = 0;
-            u64 op_idx = 0, num_bits = 2*k+1, sp = 0, prev_op = -1, valid = 1, num_ptr = 0;
-
-            for (u64 shift = 0; shift < num_bits; ++shift)
+            for (auto pattern : patterns)
             {
-                u64 op = pattern >> shift & 1;
-                if (op == OPERAND)
+                i64 st[k+1];
+                u64 st2[n_is][k+1], seq = 0;
+                u64 op_idx = 0, num_bits = 2*k+1, sp = 0, prev_op = -1, valid = 1, num_ptr = 0;
+
+                for (u64 shift = 0; shift < num_bits; ++shift)
                 {
-                    seq |= (u64)C_VAR << (3 * shift);
-                    st[sp++] = C_VAR;
-                }
-                else
-                {
-                    i64 rhs = st[--sp];
-                    i64 lhs = st[--sp];
-                    // prevent X >> (X * X) and (X >> X) >> X, or (X >> X) << X -- useless in bitmixing
-                    if (SHIFT_OP(odometer[op_idx]) && (rhs != C_VAR || SHIFT_OP(prev_op)))
+                    u64 op = pattern >> shift & 1;
+                    if (op == OPERAND)
                     {
-                        valid = false; 
-                        break;
+                        seq |= (u64)C_VAR << (3 * shift);
+                        st[sp++] = C_VAR;
                     }
+                    else
+                    {
+                        i64 rhs = st[--sp];
+                        i64 lhs = st[--sp];
+                        // prevent X >> (X * X) and (X >> X) >> X, or (X >> X) << X -- useless in bitmixing
+                        if (SHIFT_OP(odometer[op_idx]) && (rhs != C_VAR || SHIFT_OP(prev_op)))
+                        {
+                            valid = false; 
+                            break;
+                        }
 
-                    using fns = u64(*)(u64, u64);
-                    fns fs[] = { [](u64 x,u64 y){return x*y;},
-                                 [](u64 x,u64 y){return x^y;},
-                                 [](u64 x,u64 sh){sh = (sh&63)+0; return (x<<sh)|(x>>(64-sh));},
-                                 [](u64 x,u64 sh){sh = (sh&63)+0; return (x>>sh)|(x<<(64-sh));}};
+                        using fns = u64(*)(u64, u64);
+                        fns fs[] = { [](u64 x,u64 y){return x*y;},
+                                     [](u64 x,u64 y){return x^y;},
+                                     [](u64 x,u64 sh){sh = (sh&63)+0; return (x<<sh)|(x>>(64-sh));},
+                                     [](u64 x,u64 sh){sh = (sh&63)+0; return (x>>sh)|(x<<(64-sh));}};
 
+                        for (i64 i = 0; i < n_is; ++i)
+                        {
+                            u64 l = lhs == C_VAR ? nums[i][num_ptr] : st2[i][sp]; // Cannot advance num_ptr yet
+                            u64 r = rhs == C_VAR ? nums[i][num_ptr + (lhs == C_VAR ? 1 : 0)] : st2[i][sp+1];
+                            st2[i][sp] = fs[odometer[op_idx]](l, r);
+                        }
+                        if (lhs == C_VAR) num_ptr++;
+                        if (rhs == C_VAR) num_ptr++;
+
+                        st[sp++] = -1;
+                        prev_op = odometer[op_idx];
+                        seq |= (u64)odometer[op_idx++] << (3 * shift);
+                    }
+                }
+
+                if (valid)
+                {
+                    /*
+                    i64 cnt = 0;
+                    for (i64 i = 0; i < n_is; ++i) 
+                        if ((cnt = seen_hashes.count(st2[i][0])))
+                            break;
+                    if (!cnt) */
+                    auto mix = [](u64 h1, u64 h2)
+                    {
+                        const u64 kMul = 0x9ddfea08eb382d69ULL;
+                        u64 a = (h1 ^ h2) * kMul;
+                        a ^= (a >> 47);
+                        u64 b = (h2 ^ a) * kMul;
+                        b ^= (b >> 47);
+                        return b * kMul;
+                    };
+                    u64 h = 0;
                     for (i64 i = 0; i < n_is; ++i)
-                    {
-                        u64 l = lhs == C_VAR ? nums[i][num_ptr] : st2[i][sp]; // Cannot advance num_ptr yet
-                        u64 r = rhs == C_VAR ? nums[i][num_ptr + (lhs == C_VAR ? 1 : 0)] : st2[i][sp+1];
-                        st2[i][sp] = fs[odometer[op_idx]](l, r);
-                    }
-                    if (lhs == C_VAR) num_ptr++;
-                    if (rhs == C_VAR) num_ptr++;
+                        h = mix(st2[i][0], h);
 
-                    st[sp++] = -1;
-                    prev_op = odometer[op_idx];
-                    seq |= (u64)odometer[op_idx++] << (3 * shift);
-                }
-            }
-
-            if (valid)
-            {
-                /*
-                i64 cnt = 0;
-                for (i64 i = 0; i < n_is; ++i) 
-                    if ((cnt = seen_hashes.count(st2[i][0])))
-                        break;
-                if (!cnt) */
-                auto mix = [](u64 h1, u64 h2)
-                {
-                    const u64 kMul = 0x9ddfea08eb382d69ULL;
-                    u64 a = (h1 ^ h2) * kMul;
-                    a ^= (a >> 47);
-                    u64 b = (h2 ^ a) * kMul;
-                    b ^= (b >> 47);
-                    return b * kMul;
-                };
-                u64 h = 0;
-                for (i64 i = 0; i < n_is; ++i)
-                    h = mix(st2[i][0], h);
-
-                if (!seen_hashes.count(h))
-                {
                     // Fast but fails to detect: X X * X X >> * and X X X X >> * *
                     // (X * X) * (X >> X)
                     // X * (X * (X >> X))
-                    u64 ss = normalize_sequence<u64>(seq);
-                    if (!normalized_seqs.count(ss))
+                    if (!seen_hashes.count(h))
                     {
-                        //std::cout << ss << "\n";
-                        //pr3(seq);
-                        exprs.push_back(seq);
-                        seen_hashes.insert(h);
-                        normalized_seqs.insert(ss);
-                        //for (i64 i = 0; i < n_is; ++i)
-                            //seen_hashes.insert(st2[i][0]);
+                        // this does
+                        u64 ss = normalize_sequence<u64>(seq);
+                        if (!normalized_seqs.count(ss))
+                        {
+                            //std::cout << ss << "\n";
+                            //pr3(seq);
+                            exprs.push_back(seq);
+                            seen_hashes.insert(h);
+                            normalized_seqs.insert(ss);
+                            //for (i64 i = 0; i < n_is; ++i)
+                                //seen_hashes.insert(st2[i][0]);
+                        }
                     }
                 }
             }
@@ -860,7 +877,8 @@ void *thread_run_create_compile(void *args)
     alignas(8) u64 bounds[2*k]; // NOTE change this to k+1 if you every add 4 free vars
     u64 val = 0x0000000100000000ull;
 
-    const std::string basename = THREAD_WDIR + ("/" + std::to_string(my_id) + "_");
+    const std::string basename = (std::filesystem::absolute(THREAD_WDIR) / 
+                                            (std::to_string(my_id) + "_")).string();
 
     FileState state(basename, 1 << 13);
     state.load_next_file();
@@ -902,12 +920,14 @@ void *thread_run_create_compile(void *args)
     auto check_waitpid_and_dispatch = [my_id, &pid2file, best_res, &basename](int flag) {
         if (!pid2file.empty())
         {
+            // TODO PID and filenum BUG
             int status, pid;
             while ((pid = waitpid(-1, &status, flag)) > 0)
             {
                 const std::string dylib = basename + std::to_string(pid2file[pid]) + ".dylib";
                 const std::string file = basename + std::to_string(pid2file[pid]) + ".cpp";
 
+                //assert(std::filesystem::exists(dylib));
                 int fd = open(dylib.c_str(), O_RDONLY);
                 if (fd != -1) { fcntl(fd, F_FULLFSYNC); close(fd); }
 
@@ -980,7 +1000,7 @@ void *thread_run_create_compile(void *args)
 // don't allow a ^ a, 
 int main()
 {
-    template_expr_vec exprs = gen_template_expr(k);
+    template_expr_vec exprs = gen_template_expr(k, two_diff_ops_and_mult);
     std::sort(exprs.begin(), exprs.end());
 
     setup_benchmark();

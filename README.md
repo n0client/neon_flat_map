@@ -1,4 +1,4 @@
-# SIMD Flat Hash Map
+## SIMD Flat Hash Map
 
 A high-performance open-addressing hash map implemented in C++ with:
 
@@ -10,9 +10,16 @@ A high-performance open-addressing hash map implemented in C++ with:
 
 I wanted to experiment with SIMD filtering, cache efficient designs, but also learn policy based template programming. This is similar to Google's implementation, since I wanted to learn concepts used in production-grade code.
 
-Small benchmark (Mac m1 pro 10c)
-clang++ -o test test_flat_hash_map.cpp     && ./test:    inserted 1000000 uint64_t pairs in 253 ms
-clang++ -o test test_flat_hash_map.cpp -O3 && ./test:    inserted 1000000 uint64_t pairs in 24 ms
-clang++ -o test test_flat_hash_map.cpp     && ./test:    inserted 10000000 uint64_t pairs in 2710 ms
-clang++ -o test test_flat_hash_map.cpp -O3 && ./test:    inserted 10000000 uint64_t pairs in 291 ms
+### Small benchmark (Mac M1 Pro 10c)
+**4 different hashmaps:**
+* **std::unordered_map** (default hash)
+* **Ankerl::unordered_dense::map** (default hash)
+* **absl::flat_hash_map** (default hash)
+* **neon::flat_hash_map** (std::hash + custom bitmixer)
+
+![](./tests/graphing/images/1000000.png)
+**
+![](./tests/graphing/images/10000000.png)
+**
+![](./tests/graphing/images/50000000.png)
 
