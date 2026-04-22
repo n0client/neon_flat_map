@@ -10,7 +10,7 @@ A high-performance open-addressing hash map implemented in C++ with:
 
 I wanted to experiment with SIMD filtering, cache efficient designs, but also learn policy based template programming. This is similar to Google's implementation, since I wanted to learn concepts used in production-grade code.
 
-### Small benchmark (Mac M1 Pro 10c)
+### Small benchmark with 64bit int key, 128bit int value (Mac M1 Pro 10c)
 **4 different hashmaps:**
 * **std::unordered_map** (default hash)
 * **Ankerl::unordered_dense::map** (default hash)
